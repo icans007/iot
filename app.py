@@ -9,8 +9,8 @@
 import streamlit as st
 import joblib
 import pandas as pd
-import numpy as np
-import plotly.express as px  # Ditambahkan untuk visualisasi grafik interaktif
+import numpy as np 
+import matplotlib.pyplot as plt # Digunakan untuk visualisasi pengganti Plotly
 
 # ============================================================
 # CONFIG & CUSTOM CSS (Meningkatkan Tampilan UI)
@@ -440,7 +440,7 @@ with tab1:
             st.caption("Pastikan nama kolom sesuai dengan fitur yang digunakan saat training.")
 
 # ----------------------------------------------------------
-# TAB 2: UPLOAD CSV (PERBAIKAN SCALE SKALA GRAFIK & URUTAN DATA)
+# TAB 2: UPLOAD CSV 
 # ----------------------------------------------------------
 with tab2:
     st.markdown("### Prediksi Batch via File CSV")
@@ -510,7 +510,7 @@ with tab2:
                 st.divider()
 
                 # --------------------------------------------------
-                # 📊 FITUR BARU 1: KPI CARDS (METRIK RINGKASAN)
+                # 📊 KPI CARDS (METRIK RINGKASAN)
                 # --------------------------------------------------
                 st.markdown("### 📈 Ringkasan Eksekutif Keamanan")
                 total_paket = len(data_hasil)
@@ -525,7 +525,7 @@ with tab2:
                 m_col4.metric(label="🔥 Rasio Serangan", value=f"{persen_serangan}%")
 
                 # --------------------------------------------------
-                # ⚠️ FITUR BARU 2: ALERT STATUS SISTEM
+                # ⚠️ ALERT STATUS SISTEM
                 # --------------------------------------------------
                 if total_serangan > 0:
                     st.error(f"⚠️ **SISTEM STATUS: BERBAHAYA!** Ditemukan sebanyak **{total_serangan} paket ({persen_serangan}%)** aktivitas anomali/serangan siber di dalam log jaringan IoT.")
@@ -535,7 +535,7 @@ with tab2:
                 st.divider()
 
                 # --------------------------------------------------
-                # 📈 FITUR BARU 3: VISUALISASI GRAFIK INTERAKTIF (PERBAIKAN UTAMA)
+                # 📈 VISUALISASI GRAFIK INTERAKTIF (DIUBAH MENGGUNAKAN MATPLOTLIB)
                 # --------------------------------------------------
                 st.markdown("### 📊 Analisis & Grafik Distribusi")
                 
@@ -555,40 +555,63 @@ with tab2:
                 
                 with g_col2:
                     st.markdown("##### 🍩 Persentase Serangan (Pie Chart)")
-                    fig_pie = px.pie(
-                        dist, 
-                        values='Jumlah', 
-                        names='Jenis Serangan',
-                        hole=0.4,
-                        color_discrete_sequence=px.colors.qualitative.Pastel
+                    
+                    # --- MATPLOTLIB PIE (DONUT) CHART ---
+                    fig_pie, ax_pie = plt.subplots(figsize=(6, 4))
+                    # Gunakan skema warna pastel
+                    colors_pie = plt.cm.Pastel1.colors
+                    
+                    # Membuat donut chart menggunakan wedgeprops
+                    wedges, texts, autotexts = ax_pie.pie(
+                        dist['Jumlah'], 
+                        labels=dist['Jenis Serangan'], 
+                        autopct='%1.1f%%',
+                        startangle=140, 
+                        colors=colors_pie,
+                        wedgeprops=dict(width=0.4, edgecolor='white')
                     )
-                    fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=250)
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    ax_pie.axis('equal')  # Memastikan rasio bentuk bulat sempurna
+                    fig_pie.patch.set_alpha(0.0) # Membuat background transparan agar menyatu dengan UI Streamlit
+                    
+                    st.pyplot(fig_pie)
+                    plt.close(fig_pie) # Mencegah memory leak
 
                 st.markdown("##### 📊 Jumlah Serangan per Kategori (Bar Chart)")
-                # Membuat Bar Chart dengan urutan sesuai tabel
-                fig_bar = px.bar(
-                    dist,
-                    x='Jenis Serangan',
-                    y='Jumlah',
-                    color='Tingkat Serangan',
-                    color_discrete_map={'Normal': '#2ed573', 'Tinggi': '#ff4757'},
-                    text_auto=True
-                )
                 
-                # FIX UTAMA: Paksa Sumbu Y agar selalu mulai dari 0 dan mengurutkan Sumbu X secara konsisten
-                fig_bar.update_yaxes(range=[0, dist['Jumlah'].max() * 1.1])
-                fig_bar.update_layout(
-                    xaxis={'categoryorder': 'total descending'},
-                    margin=dict(t=20, b=20, l=20, r=20), 
-                    height=350
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
+                # --- MATPLOTLIB BAR CHART ---
+                fig_bar, ax_bar = plt.subplots(figsize=(10, 4))
+                
+                # Menentukan warna sesuai tingkat serangan (Hijau = Normal, Merah = Tinggi)
+                warna_bar = ['#2ed573' if status == 'Normal' else '#ff4757' for status in dist['Tingkat Serangan']]
+                
+                bars = ax_bar.bar(dist['Jenis Serangan'], dist['Jumlah'], color=warna_bar)
+                
+                # Menambahkan label teks pada masing-masing bar (pengganti text_auto=True)
+                ax_bar.bar_label(bars, padding=3, fmt='%d')
+                
+                # Membersihkan tampilan (mirip style plotly)
+                ax_bar.spines['top'].set_visible(False)
+                ax_bar.spines['right'].set_visible(False)
+                ax_bar.set_ylabel('Jumlah')
+                
+                # Rotasi label x-axis agar tidak bertumpuk
+                plt.xticks(rotation=45, ha='right')
+                
+                # Memastikan axis Y mulai dari 0 dengan sedikit jarak atas untuk teks
+                ax_bar.set_ylim(0, dist['Jumlah'].max() * 1.15)
+                
+                # Background transparan
+                fig_bar.patch.set_alpha(0.0)
+                ax_bar.patch.set_alpha(0.0)
+                
+                plt.tight_layout()
+                st.pyplot(fig_bar)
+                plt.close(fig_bar) # Mencegah memory leak
 
                 st.divider()
 
                 # --------------------------------------------------
-                # 🔍 FITUR BARU 4: FILTER INTERAKTIF DATA UTAMA
+                # 🔍 FILTER INTERAKTIF DATA UTAMA
                 # --------------------------------------------------
                 st.markdown("### 📋 Data Log Hasil Analisis")
                 
