@@ -10,6 +10,7 @@ import streamlit as st
 import joblib
 import pandas as pd
 import numpy as np
+import plotly.express as px  # Ditambahkan untuk visualisasi grafik interaktif
 
 # ============================================================
 # CONFIG & CUSTOM CSS (Meningkatkan Tampilan UI)
@@ -68,7 +69,7 @@ st.markdown("""
         border: none;
     }
     
-    /* Styling khusus untuk metrik di sidebar agar lebih menonjol */
+    /* Styling khusus untuk metrik agar lebih menonjol */
     [data-testid="stMetricValue"] {
         font-size: 2.2rem !important;
         font-weight: 800 !important;
@@ -204,7 +205,6 @@ def load_pipeline():
     """
     Memuat Pipeline secara utuh dari pipeline_terbaik.pkl.
     Pipeline mencakup: StandardScaler → SelectFromModel → RandomForest.
-    Input baru otomatis diproses lengkap tanpa preprocessing manual.
     """
     try:
         pipeline = joblib.load("pipeline_terbaik.pkl")
@@ -276,7 +276,7 @@ else:
 st.divider()
 
 # ============================================================
-# SECTION 1 — INFO PIPELINE (3 CARD KLIKABLE)
+# SECTION 1 — INFO PIPELINE
 # ============================================================
 
 st.subheader("ℹ️ Informasi Pipeline & Metode")
@@ -322,7 +322,7 @@ with col3:
 st.divider()
 
 # ============================================================
-# SECTION 2 — KELAS YANG DAPAT DIDETEKSI (KLIKABLE)
+# SECTION 2 — KELAS YANG DAPAT DIDETEKSI
 # ============================================================
 
 with st.expander("🎯 Kelas Serangan yang Dapat Dideteksi (12 Kelas)", expanded=False):
@@ -342,7 +342,7 @@ with st.expander("🎯 Kelas Serangan yang Dapat Dideteksi (12 Kelas)", expanded
 st.divider()
 
 # ============================================================
-# SECTION 3 — CARA PENGGUNAAN (KLIKABLE)
+# SECTION 3 — CARA PENGGUNAAN
 # ============================================================
 
 with st.expander("📖 Cara Penggunaan Aplikasi", expanded=False):
@@ -403,25 +403,34 @@ with tab1:
             data_input = pd.DataFrame([input_values])[ALL_FEATURES]
             hasil_kode = model.predict(data_input)[0]
 
-            # Tampilkan nama kelas (bukan angka)
-            if hasattr(model, "classes_"):
-                hasil_label = str(hasil_kode)
-            else:
+            try:
                 hasil_label = LABEL_MAP.get(int(hasil_kode), str(hasil_kode))
+            except (ValueError, TypeError):
+                hasil_label = str(hasil_kode)
 
-            # Tentukan warna notif
+            st.success("Prediksi berhasil dilakukan")
+
             if hasil_label == "Normal":
                 st.success(f"🟢 **Hasil Prediksi:** {hasil_label} — Trafik normal, tidak terdeteksi serangan.")
             else:
                 st.error(f"🔴 **Hasil Prediksi:** {hasil_label} — Terdeteksi serangan!")
 
-            # Probabilitas
+            df_tampil_manual = data_input.copy()
+            df_tampil_manual['Prediction'] = hasil_label
+            st.markdown("#### 📋 Hasil Analisis Baris")
+            st.dataframe(df_tampil_manual, use_container_width=True)
+
             if hasattr(model, "predict_proba"):
                 proba = model.predict_proba(data_input)
-                proba_df = pd.DataFrame(
-                    proba,
-                    columns=[str(c) for c in model.classes_]
-                ).round(4)
+                
+                kolom_proba = []
+                for c in model.classes_:
+                    try:
+                        kolom_proba.append(LABEL_MAP.get(int(c), str(c)))
+                    except (ValueError, TypeError):
+                        kolom_proba.append(str(c))
+                        
+                proba_df = pd.DataFrame(proba, columns=kolom_proba).round(4)
 
                 with st.expander("📊 Lihat Probabilitas per Kelas", expanded=True):
                     st.dataframe(proba_df, use_container_width=True)
@@ -431,7 +440,7 @@ with tab1:
             st.caption("Pastikan nama kolom sesuai dengan fitur yang digunakan saat training.")
 
 # ----------------------------------------------------------
-# TAB 2: UPLOAD CSV
+# TAB 2: UPLOAD CSV (PERBAIKAN SCALE SKALA GRAFIK & URUTAN DATA)
 # ----------------------------------------------------------
 with tab2:
     st.markdown("### Prediksi Batch via File CSV")
@@ -452,7 +461,6 @@ with tab2:
             st.markdown(f"**Preview Data:** {len(data)} baris · {len(data.columns)} kolom")
             st.dataframe(data.head(), use_container_width=True)
 
-            # Validasi kolom
             missing_cols = [c for c in ALL_FEATURES if c not in data.columns]
             extra_cols   = [c for c in data.columns  if c not in ALL_FEATURES]
 
@@ -472,54 +480,141 @@ with tab2:
             if st.button("🔍 Prediksi Dataset", key="btn_csv", use_container_width=True):
                 with st.spinner("Memproses melalui Pipeline: Scaler → Feature Selection → Model..."):
 
-                    # Isi kolom yang kurang dengan 0, urutkan sesuai training
                     for col in ALL_FEATURES:
                         if col not in data.columns:
                             data[col] = 0.0
                     data_ordered = data[ALL_FEATURES]
 
-                    prediksi = model.predict(data_ordered)
+                    prediksi_mentah = model.predict(data_ordered)
                     data_hasil = data_ordered.copy()
-                    data_hasil["Prediction"] = prediksi
+                    
+                    try:
+                        nama_serangan_batch = [LABEL_MAP.get(int(p), str(p)) for p in prediksi_mentah]
+                    except (ValueError, TypeError):
+                        nama_serangan_batch = prediksi_mentah
+                        
+                    data_hasil["Prediction"] = nama_serangan_batch
 
                     if hasattr(model, "predict_proba"):
                         proba_batch = model.predict_proba(data_ordered)
                         for i, c in enumerate(model.classes_):
-                            data_hasil[f"Prob_{c}"] = proba_batch[:, i].round(4)
+                            try:
+                                nama_kelas = LABEL_MAP.get(int(c), str(c))
+                            except (ValueError, TypeError):
+                                nama_kelas = str(c)
+                            data_hasil[f"Prob_{nama_kelas}"] = proba_batch[:, i].round(4)
 
+                st.success("Prediksi berhasil dilakukan")
                 st.success(f"✅ {len(data_hasil)} baris selesai diprediksi.")
-
-                # Preview hasil
-                st.markdown("**Hasil Prediksi (10 baris pertama):**")
-                st.dataframe(data_hasil.head(10), use_container_width=True)
-
-                # Distribusi kelas
-                with st.expander("📊 Lihat Distribusi Prediksi", expanded=True):
-                    dist = (
-                        data_hasil["Prediction"]
-                        .value_counts()
-                        .reset_index()
-                    )
-                    dist.columns = ["Kelas", "Jumlah"]
-                    dist["Persentase"] = (
-                        (dist["Jumlah"] / len(data_hasil) * 100)
-                        .round(2)
-                        .astype(str) + "%"
-                    )
-                    dist["Jenis"] = dist["Kelas"].apply(
-                        lambda x: "Normal" if str(x) == "Normal" else "Serangan"
-                    )
-                    st.dataframe(dist, use_container_width=True)
-
-                # Download
-                csv_out = data_hasil.to_csv(index=False).encode("utf-8")
                 
+                st.divider()
+
+                # --------------------------------------------------
+                # 📊 FITUR BARU 1: KPI CARDS (METRIK RINGKASAN)
+                # --------------------------------------------------
+                st.markdown("### 📈 Ringkasan Eksekutif Keamanan")
+                total_paket = len(data_hasil)
+                total_normal = data_hasil[data_hasil['Prediction'] == 'Normal'].shape[0]
+                total_serangan = total_paket - total_normal
+                persen_serangan = round((total_serangan / total_paket) * 100, 2) if total_paket > 0 else 0
+
+                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                m_col1.metric(label="📦 Total Traffic Diuji", value=f"{total_paket} Pkt")
+                m_col2.metric(label="🟢 Traffic Normal", value=f"{total_normal} Pkt")
+                m_col3.metric(label="🚨 Serangan Terdeteksi", value=f"{total_serangan} Pkt", delta="Bahaya" if total_serangan > 0 else "Aman", delta_color="inverse")
+                m_col4.metric(label="🔥 Rasio Serangan", value=f"{persen_serangan}%")
+
+                # --------------------------------------------------
+                # ⚠️ FITUR BARU 2: ALERT STATUS SISTEM
+                # --------------------------------------------------
+                if total_serangan > 0:
+                    st.error(f"⚠️ **SISTEM STATUS: BERBAHAYA!** Ditemukan sebanyak **{total_serangan} paket ({persen_serangan}%)** aktivitas anomali/serangan siber di dalam log jaringan IoT.")
+                else:
+                    st.success("✅ **SISTEM STATUS: AMAN.** Seluruh paket yang diuji diidentifikasi sebagai lalu lintas data normal.")
+
+                st.divider()
+
+                # --------------------------------------------------
+                # 📈 FITUR BARU 3: VISUALISASI GRAFIK INTERAKTIF (PERBAIKAN UTAMA)
+                # --------------------------------------------------
+                st.markdown("### 📊 Analisis & Grafik Distribusi")
+                
+                # Olah data distribusi & Urutkan secara descending berdasarkan Jumlah
+                dist = data_hasil["Prediction"].value_counts().reset_index()
+                dist.columns = ["Jenis Serangan", "Jumlah"]
+                dist["Persentase"] = ((dist["Jumlah"] / len(data_hasil)) * 100).round(2)
+                dist["Tingkat Serangan"] = dist["Jenis Serangan"].apply(lambda x: "Normal" if str(x) == "Normal" else "Tinggi")
+
+                g_col1, g_col2 = st.columns(2)
+                
+                with g_col1:
+                    st.markdown("##### 📌 Tabel Distribusi Frekuensi")
+                    dist_tampil = dist.copy()
+                    dist_tampil["Persentase"] = dist_tampil["Persentase"].astype(str) + "%"
+                    st.dataframe(dist_tampil, use_container_width=True)
+                
+                with g_col2:
+                    st.markdown("##### 🍩 Persentase Serangan (Pie Chart)")
+                    fig_pie = px.pie(
+                        dist, 
+                        values='Jumlah', 
+                        names='Jenis Serangan',
+                        hole=0.4,
+                        color_discrete_sequence=px.colors.qualitative.Pastel
+                    )
+                    fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20), height=250)
+                    st.plotly_chart(fig_pie, use_container_width=True)
+
+                st.markdown("##### 📊 Jumlah Serangan per Kategori (Bar Chart)")
+                # Membuat Bar Chart dengan urutan sesuai tabel
+                fig_bar = px.bar(
+                    dist,
+                    x='Jenis Serangan',
+                    y='Jumlah',
+                    color='Tingkat Serangan',
+                    color_discrete_map={'Normal': '#2ed573', 'Tinggi': '#ff4757'},
+                    text_auto=True
+                )
+                
+                # FIX UTAMA: Paksa Sumbu Y agar selalu mulai dari 0 dan mengurutkan Sumbu X secara konsisten
+                fig_bar.update_yaxes(range=[0, dist['Jumlah'].max() * 1.1])
+                fig_bar.update_layout(
+                    xaxis={'categoryorder': 'total descending'},
+                    margin=dict(t=20, b=20, l=20, r=20), 
+                    height=350
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+                st.divider()
+
+                # --------------------------------------------------
+                # 🔍 FITUR BARU 4: FILTER INTERAKTIF DATA UTAMA
+                # --------------------------------------------------
+                st.markdown("### 📋 Data Log Hasil Analisis")
+                
+                filter_opsi = st.selectbox(
+                    "🎯 Saring Tampilan Tabel Data:",
+                    ["Semua Traffic Data", "Hanya Deteksi Serangan (Anomali)", "Hanya Traffic Normal"]
+                )
+
+                if filter_opsi == "Hanya Deteksi Serangan (Anomali)":
+                    df_filtered = data_hasil[data_hasil['Prediction'] != 'Normal']
+                elif filter_opsi == "Hanya Traffic Normal":
+                    df_filtered = data_hasil[data_hasil['Prediction'] == 'Normal']
+                else:
+                    df_filtered = data_hasil
+
+                st.caption(f"Menampilkan {len(df_filtered)} baris data berdasarkan filter.")
+                st.dataframe(df_filtered, use_container_width=True)
+
+                # Tombol Download Output
+                csv_out = data_hasil.to_csv(index=False).encode("utf-8")
                 st.markdown("<br>", unsafe_allow_html=True)
                 
                 st.download_button(
-                    label="⬇️ Download Hasil Prediksi (.csv)",
+                    label="⬇️ Download Hasil Prediksi Lengkap (.csv)",
                     data=csv_out,
-                    file_name="hasil_prediksi.csv",
+                    file_name="hasil_prediksi_iot.csv",
                     mime="text/csv",
                     key="btn_download",
                     use_container_width=True
